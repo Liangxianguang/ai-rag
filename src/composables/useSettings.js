@@ -6,7 +6,7 @@ export function useSettings() {
   // 本地模型设置
   const useLocalModel = ref(true)
   const currentModel = ref('deepseek-r1:1.5b')
-  const ollamaBaseUrl = ref('/api/ollama')
+  const ollamaBaseUrl = ref('http://localhost:11434')  // 改为直接地址而不是代理路径
   const availableModels = ref([])
   
   // 远程模型设置
@@ -31,8 +31,11 @@ export function useSettings() {
       useLocalModel.value = settings.useLocalModel ?? true
       currentModel.value = settings.currentModel || 'deepseek-r1:1.5b'
       remoteModel.value = settings.remoteModel || 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
-      apiKey.value = settings.apiKey || apiKey.value
-      ollamaBaseUrl.value = settings.ollamaBaseUrl || '/api/ollama'
+      // 只有在 localStorage 中明确存在且非空时才覆盖默认值
+      if (settings.apiKey) {
+        apiKey.value = settings.apiKey
+      }
+      ollamaBaseUrl.value = settings.ollamaBaseUrl || 'http://localhost:11434'
       temperature.value = settings.temperature ?? 0.7
       maxTokens.value = settings.maxTokens ?? 2000
       useKnowledgeBase.value = settings.useKnowledgeBase ?? true

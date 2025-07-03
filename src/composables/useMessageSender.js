@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { AIService, buildMessageContext } from '@/services/aiService'
+import { KnowledgeService } from '@/services/knowledgeService'
 
 // 消息发送处理
 export function useMessageSender(chatComposable, settings) {
@@ -30,121 +30,56 @@ export function useMessageSender(chatComposable, settings) {
     loading.value = true
     scrollToBottom()
 
-    // 创建AI服务实例
-    const aiService = new AIService(settings)
+    // 创建知识库服务实例，从 computed ref 获取最新值
+    const knowledgeService = new KnowledgeService(settings.value)
 
-    // 知识库问答逻辑（支持流式输出）
-    if (settings.useKnowledgeBase.value) {
-      const result = await aiService.callKnowledgeBaseStream(
-        currentQuestion, 
-        currentSession.value.messages, 
-        null, 
-        scrollToBottom
-      )
-
-      if (result.success) {
-        loading.value = false
-        return
-      }
-
-      // 降级到普通API
-      try {
-        const fallbackResponse = await fetch(`${settings.knowledgeBaseUrl.value}/answer`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: currentQuestion,
-            top_k: settings.searchTopK.value,
-            max_length: settings.maxContextLength.value
-          })
-        })
-        
-        if (fallbackResponse.ok) {
-          const data = await fallbackResponse.json()
-          if (data && data.answer) {
-            const fullAnswer = data.answer
-            const sources = data.sources || []
-            const method = data.method || 'unknown'
-            
-            const { thinking, answer } = aiService.parseContentWithThinkTag(fullAnswer)
-            
-            const fallbackMessage = {
-              type: 'assistant',
-              content: answer || fullAnswer,
-              thinking: thinking || `问答完成 (${method})`,
-              sources: sources.map(s => typeof s === 'object' ? s.title : s),
-              timestamp: Date.now()
-            }
-            
-            currentSession.value.messages.push(fallbackMessage)
-            loading.value = false
-            scrollToBottom()
-            return
-          }
-        }
-      } catch (fallbackError) {
-        console.error('降级API也失败了:', fallbackError)
-      }
-      
-      // 最终错误处理
-      const errorMessage = {
-        type: 'assistant',
-        content: '知识库服务暂时不可用，请稍后重试。',
-        thinking: '服务异常',
-        timestamp: Date.now()
-      }
-      currentSession.value.messages.push(errorMessage)
-      loading.value = false
-      scrollToBottom()
-      return
-    }
-
-    // 构建消息上下文
-    const apiMessages = buildMessageContext(currentSession.value.messages, currentQuestion)
-
+    // 准备接收AI响应的消息体
     const aiMessage = {
       type: 'assistant',
       content: '',
-      thinking: '',
+      thinking: '正在准备回答...',
       sources: [],
       timestamp: Date.now()
     }
     currentSession.value.messages.push(aiMessage)
     const messageIndex = currentSession.value.messages.length - 1
 
-    // 更新消息的辅助函数
-    function updateMessage(index, updates, append = false) {
-      if (append && updates.content) {
-        currentSession.value.messages[index].content += updates.content
-      } else {
-        Object.assign(currentSession.value.messages[index], updates)
+    try {
+      // 统一调用新的流式生成接口
+      await knowledgeService.generateAnswerStream(currentQuestion, currentSession.value.messages, (update) => {
+        const msg = currentSession.value.messages[messageIndex]
+        if (!msg) return
+
+        if (update.type === 'thinking') {
+          msg.thinking = update.content
+        } else if (update.type === 'answer_start') {
+          msg.thinking = `正在生成答案...`
+          msg.method = update.method
+        } else if (update.type === 'answer') {
+          msg.content += update.content
+        } else if (update.type === 'sources') {
+          msg.sources = update.sources
+        } else if (update.type === 'done') {
+          msg.thinking = `问答完成 (${msg.method || 'unknown'})`
+        } else if (update.type === 'error') {
+          msg.content = update.content
+          msg.thinking = '生成失败'
+        }
+        scrollToBottom()
+      })
+    } catch (error) {
+      console.error('消息发送处理失败:', error)
+      const msg = currentSession.value.messages[messageIndex]
+      if (msg) {
+        msg.content = `处理请求时发生错误: ${error.message}`
+        msg.thinking = '服务异常'
       }
-    }
-
-    // 根据配置选择本地或远程模型
-    let result
-    if (settings.useLocalModel.value) {
-      result = await aiService.callOllamaAPI(apiMessages, messageIndex, updateMessage, scrollToBottom)
-    } else {
-      result = await aiService.callRemoteAPI(apiMessages, messageIndex, updateMessage, scrollToBottom)
-    }
-
-    if (!result.success) {
-      currentSession.value.messages.splice(-1) // 删除失败的消息
     }
 
     loading.value = false
   }
 
-  // 快速发送消息
-  function sendQuickMessage(message = '你好，我是阑珊 AI，有什么可以帮助您？') {
-    sendMsg(message)
-  }
-
   return {
-    sendMsg,
-    sendQuickMessage
+    sendMsg
   }
 }

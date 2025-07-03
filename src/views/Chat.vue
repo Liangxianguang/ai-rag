@@ -143,7 +143,7 @@ const settingsData = computed(() => ({
   searchTopK
 }))
 
-const messageSender = useMessageSender(chatComposable, settingsData.value)
+const messageSender = useMessageSender(chatComposable, settingsData) //不再使用 .value，传递整个 computed ref
 const { sendMsg, sendQuickMessage } = messageSender
 
 const { copyText, likeMessage, regenerateResponse } = useTextUtils()
@@ -177,9 +177,22 @@ function handleFileProcessed(fileMessage) {
   }
 }
 
-// 处理保存设置
+// 处理保存设置 - 正确更新所有原始 ref
 function handleSaveSettings(newSettings) {
-  Object.assign(settingsData.value, newSettings)
+  // newSettings 是从子组件 emit 出来的普通对象，不包含 .value
+  useLocalModel.value = newSettings.useLocalModel
+  currentModel.value = newSettings.currentModel
+  remoteModel.value = newSettings.remoteModel
+  apiKey.value = newSettings.apiKey
+  ollamaBaseUrl.value = newSettings.ollamaBaseUrl
+  temperature.value = newSettings.temperature
+  maxTokens.value = newSettings.maxTokens
+  useKnowledgeBase.value = newSettings.useKnowledgeBase
+  knowledgeBaseUrl.value = newSettings.knowledgeBaseUrl
+  maxContextLength.value = newSettings.maxContextLength
+  searchTopK.value = newSettings.searchTopK
+
+  // 调用 useSettings 中的保存函数，将更新后的值存入 localStorage
   saveSettings()
 }
 
