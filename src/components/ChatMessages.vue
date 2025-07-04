@@ -74,7 +74,8 @@
                   type="text" 
                   :icon="Refresh" 
                   size="small"
-                  @click="$emit('regenerateResponse', index)"
+                  @click="handleRegenerate(index)"
+                  :disabled="loading"
                 />
               </el-tooltip>
             </div>
@@ -119,9 +120,15 @@ defineProps({
   }
 })
 
-defineEmits(['copyText', 'likeMessage', 'regenerateResponse'])
+const emit = defineEmits(['copyText', 'likeMessage', 'regenerateResponse'])
 
 const messagesContainer = ref(null)
+
+// 点击重新生成按钮时调用的函数
+function handleRegenerate(index) {
+  // 发出事件，把消息的索引传递给父组件
+  emit('regenerateResponse', index)
+}
 
 // 格式化时间
 function formatTime(timestamp) {

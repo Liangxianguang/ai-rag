@@ -93,22 +93,11 @@ const msg = ref('')
 const showSettings = ref(false)
 const messagesRef = ref(null)
 
-// 使用 composables
-const chatComposable = useChat()
-const {
-  chatSessions,
-  currentSessionIndex,
-  currentSession,
-  loading,
-  newChat,
-  switchSession,
-  deleteSession,
-  clearChat,
-  scrollToBottom,
-  initSessions,
-  saveSessions
-} = chatComposable
+// 🔥 关键修复：正确的依赖注入模式
+// 1. 先定义一个函数引用，用于回调
+let sendMsgFn;
 
+// 2. 初始化设置 composable
 const settingsComposable = useSettings()
 const {
   useLocalModel,
@@ -121,17 +110,17 @@ const {
   maxTokens,
   useKnowledgeBase,
   knowledgeBaseUrl,
-  knowledgeBaseCollection, // 新增
-  availableKnowledgeBases, // 新增
+  knowledgeBaseCollection,
+  availableKnowledgeBases,
   maxContextLength,
   searchTopK,
   loadSettings,
   saveSettings,
   loadOllamaModels,
-  loadKnowledgeBases // 新增
+  loadKnowledgeBases
 } = settingsComposable
 
-// 设置数据对象
+// 3. 创建设置数据对象
 const settingsData = computed(() => ({
   useLocalModel,
   currentModel,
@@ -143,16 +132,50 @@ const settingsData = computed(() => ({
   maxTokens,
   useKnowledgeBase,
   knowledgeBaseUrl,
-  knowledgeBaseCollection, // 新增
-  availableKnowledgeBases, // 新增
+  knowledgeBaseCollection,
+  availableKnowledgeBases,
   maxContextLength,
   searchTopK
 }))
 
-const messageSender = useMessageSender(chatComposable, settingsData) //不再使用 .value，传递整个 computed ref
+// 4. 创建 useChat，传入箭头函数作为回调
+const chatComposable = useChat((...args) => {
+  if (sendMsgFn) {
+    return sendMsgFn(...args)
+  } else {
+    console.error('sendMsgFn is not ready yet')
+  }
+})
+
+// 5. 解构 useChat 的返回值
+const {
+  chatSessions,
+  currentSessionIndex,
+  currentSession,
+  loading,
+  newChat,
+  switchSession,
+  deleteSession,
+  clearChat,
+  regenerateResponse, // 🔥 这是真正的重新生成函数
+  scrollToBottom,
+  initSessions,
+  saveSessions
+} = chatComposable
+
+// 6. 创建 messageS
+const messageSender = useMessageSender(chatComposable, settingsData)
 const { sendMsg, sendQuickMessage } = messageSender
 
-const { copyText, likeMessage, regenerateResponse } = useTextUtils()
+// 7. 🔥 关键步骤：将真正的 sendMsg 赋值给函数引用
+sendMsgFn = sendMsg
+
+// 8. 从 useTextUtils 只获取我们需要的函数
+const { copyText, likeMessage } = useTextUtils()
+
+// 🔥 调试：确保函数正确连接
+console.log('regenerateResponse function:', regenerateResponse)
+console.log('sendMsgFn assigned:', !!sendMsgFn)
 
 // 初始化
 onMounted(async () => {

@@ -7,26 +7,28 @@ export function useMessageSender(chatComposable, settings) {
   const { currentSession, loading, scrollToBottom } = chatComposable
   
   // 发送消息
-  async function sendMsg(message) {
-    if (!message.trim()) {
+  async function sendMsg(messageContent, isRegeneration = false) {
+    if (!messageContent.trim()) {
       ElMessage.warning('请输入您的问题')
       return
     }
 
-    const userMessage = {
-      type: 'user',
-      content: message,
-      timestamp: Date.now()
+    // 如果不是重新生成，才添加新的用户消息
+    if (!isRegeneration) {
+      const userMessage = {
+        type: 'user',
+        content: messageContent,
+        timestamp: Date.now()
+      }
+      currentSession.value.messages.push(userMessage)
+      
+      if (!currentSession.value.title) {
+        currentSession.value.title = messageContent.length > 20 ? 
+          messageContent.substring(0, 20) + '...' : messageContent
+      }
     }
     
-    currentSession.value.messages.push(userMessage)
-    
-    if (!currentSession.value.title) {
-      currentSession.value.title = message.length > 20 ? 
-        message.substring(0, 20) + '...' : message
-    }
-    
-    const currentQuestion = message
+    const currentQuestion = messageContent
     loading.value = true
     scrollToBottom()
 

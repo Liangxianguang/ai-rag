@@ -2,7 +2,7 @@ import { ref, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 // 聊天状态管理
-export function useChat() {
+export function useChat(sendMsgCallback) { // 接收发送消息的回调
   const chatSessions = ref([])
   const currentSessionIndex = ref(0)
   const loading = ref(false)
@@ -58,6 +58,39 @@ export function useChat() {
       
       ElMessage.success('对话已删除')
     }).catch(() => {})
+  }
+
+  // 新增：重新生成回答的函数
+  function regenerateResponse(index) {
+    if (loading.value) {
+      ElMessage.warning('请等待当前回答生成完毕后再试。')
+      return
+    }
+    
+    // 确保我们操作的是一个AI消息，并且它前面有一个用户消息
+    if (index > 0 && currentSession.value.messages[index].type === 'assistant') {
+      const userMessage = currentSession.value.messages[index - 1]
+      
+      if (userMessage.type === 'user') {
+        // 1. 获取用户的问题
+        const questionToResend = userMessage.content
+        
+        // 2. 从消息列表中删除旧的AI回答
+        currentSession.value.messages.splice(index, 1)
+        
+        // 3. 调用发送消息的逻辑，并标记为重新生成
+        if (sendMsgCallback && typeof sendMsgCallback === 'function') {
+          sendMsgCallback(questionToResend, true)
+        } else {
+          console.error("sendMsgCallback is not a function or not provided to useChat.")
+        }
+        
+      } else {
+        ElMessage.error('无法找到对应的用户问题来重新生成。')
+      }
+    } else {
+      ElMessage.error('无法对该消息进行重新生成操作。')
+    }
   }
 
   // 清空聊天
@@ -124,6 +157,7 @@ export function useChat() {
     switchSession,
     deleteSession,
     clearChat,
+    regenerateResponse, // 暴露新函数
     scrollToBottom,
     formatTime,
     formatDate,
