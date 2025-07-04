@@ -107,11 +107,33 @@
         </div>
       </el-form-item>
       
+      <!-- 新增：知识库选择下拉框 -->
+      <el-form-item label="知识库" v-if="localSettings.useKnowledgeBase">
+        <el-select 
+          v-model="localSettings.knowledgeBaseCollection" 
+          placeholder="请选择知识库"
+          style="width: 100%;"
+          @visible-change="handleDropdownVisibleChange"
+        >
+          <el-option
+            v-for="kb in localSettings.availableKnowledgeBases"
+            :key="kb"
+            :label="kb"
+            :value="kb"
+          />
+          <template #empty>
+            <div style="padding: 10px; text-align: center; color: #999;">
+              没有可用的知识库，请检查后端服务。
+            </div>
+          </template>
+        </el-select>
+      </el-form-item>
+
       <el-form-item v-if="localSettings.useKnowledgeBase" label="最大上下文长度">
         <el-input-number 
           v-model="localSettings.maxContextLength" 
-          :min="100" 
-          :max="10000" 
+          :min="500" 
+          :max="8000" 
           :step="100" 
         />
       </el-form-item>
@@ -149,7 +171,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:showSettings', 'saveSettings', 'loadModels'])
+const emit = defineEmits(['update:showSettings', 'saveSettings', 'loadModels', 'loadKnowledgeBases'])
 
 // 本地状态
 const localShowSettings = ref(props.showSettings)
@@ -173,6 +195,14 @@ watch(localShowSettings, (newVal) => {
 function handleSave() {
   emit('saveSettings', localSettings.value)
   localShowSettings.value = false
+}
+
+// 新增：处理下拉框显示/隐藏事件
+const handleDropdownVisibleChange = (visible) => {
+  // 当下拉框即将显示时，触发事件重新加载知识库列表
+  if (visible) {
+    emit('loadKnowledgeBases')
+  }
 }
 </script>
 

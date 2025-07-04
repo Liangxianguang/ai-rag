@@ -113,7 +113,8 @@ export class KnowledgeService {
     try {
       const response = await axios.post(`${this.settings.knowledgeBaseUrl.value}/retrieve`, {
         query: question,
-        top_k: this.settings.searchTopK.value,
+        collection_name: this.settings.knowledgeBaseCollection.value, // 传递集合名称
+        top_k: this.settings.searchTopK.value, // 传递 top_k
         similarity_threshold: 0.65 // 直接使用 0.65 作为阈值
       })
       return { success: true, documents: response.data.documents || [] }

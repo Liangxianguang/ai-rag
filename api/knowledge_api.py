@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 
 # 配置路径 - 请根据实际情况修改
 CHROMADB_PATH = str(project_root / "test" / "chroma")
-COLLECTION_NAME = 'laodongfa'
+# 移除固定的 COLLECTION_NAME
+# COLLECTION_NAME = 'laodongfa'
 MODEL_PATH = r'D:\llama index\sentence-transformers\paraphrase-multilingual-MiniLM-L12-v2'
 
 # 如果模型路径不存在，使用在线模型
@@ -63,6 +64,7 @@ app.add_middleware(
 # --- Pydantic 模型定义 ---
 class RetrieveRequest(BaseModel):
     query: str = Field(..., description="查询问题")
+    collection_name: str = Field(..., description="要查询的知识库集合名称")
     top_k: int = Field(default=5, ge=1, le=20, description="返回文档数量")
     max_length: int = Field(default=3000, ge=100, le=10000, description="最大内容长度")
     similarity_threshold: float = Field(default=0.65, ge=0, le=1, description="相似度阈值，只返回高于此分数的文档")
@@ -79,14 +81,16 @@ class RetrieveResponse(BaseModel):
     query: str = Field(..., description="原始查询")
 
 # --- 全局变量和初始化 ---
-index = None
+# 移除全局 index，改为在请求时动态创建
+# index = None
+chroma_client = None
 
 def init_knowledge_base():
-    """初始化知识库，仅用于检索"""
-    global index
+    """初始化知识库组件，主要是 embedding 模型和 chroma 客户端"""
+    global chroma_client
     
     try:
-        logger.info("正在初始化知识库 (仅检索模式)...")
+        logger.info("正在初始化知识库组件...")
         
         if not Path(CHROMADB_PATH).exists():
             raise FileNotFoundError(f"ChromaDB 路径不存在: {CHROMADB_PATH}")
@@ -103,19 +107,13 @@ def init_knowledge_base():
         Settings.embed_model = embeddings
         logger.info("Embedding 模型加载成功")
         
-        # 3. 连接 ChromaDB
+        # 3. 初始化 ChromaDB 客户端
         chroma_client = chromadb.PersistentClient(path=CHROMADB_PATH)
-        chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
-        logger.info(f"成功加载集合: {COLLECTION_NAME}")
         
-        # 4. 创建向量存储和索引
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-        index = VectorStoreIndex.from_vector_store(vector_store)
-        
-        logger.info("知识库初始化完成 (仅检索模式)")
+        logger.info("知识库组件初始化完成")
         
     except Exception as e:
-        logger.error(f"知识库初始化失败: {e}")
+        logger.error(f"知识库组件初始化失败: {e}")
         raise
 
 @app.on_event("startup")
@@ -135,19 +133,18 @@ async def root():
 @app.get("/health")
 async def health_check():
     """详细健康检查"""
-    global query_engine, vector_store
+    global chroma_client
     
     status = {
         "service": "knowledge_api",
-        "status": "healthy" if query_engine is not None else "unhealthy",
-        "vector_store": "initialized" if vector_store is not None else "not_initialized",
+        "status": "healthy" if chroma_client is not None else "unhealthy",
+        "chromadb_client": "initialized" if chroma_client is not None else "not_initialized",
         "chromadb_path": CHROMADB_PATH,
-        "collection_name": COLLECTION_NAME,
         "model_path": MODEL_PATH,
         "cuda_available": torch.cuda.is_available()
     }
     
-    if query_engine is None:
+    if chroma_client is None:
         raise HTTPException(status_code=503, detail="知识库未初始化")
     
     return status
@@ -155,13 +152,24 @@ async def health_check():
 @app.post("/retrieve", response_model=RetrieveResponse)
 async def retrieve_knowledge(request: RetrieveRequest):
     """检索知识库内容"""
-    global index
+    global chroma_client
     
-    if index is None:
-        raise HTTPException(status_code=503, detail="知识库未初始化 (Index is None)")
+    if chroma_client is None:
+        raise HTTPException(status_code=503, detail="知识库未初始化 (Chroma Client is None)")
     
     try:
-        logger.info(f"收到检索请求: '{request.query}' (top_k={request.top_k})")
+        logger.info(f"收到对集合 '{request.collection_name}' 的检索请求: '{request.query}' (top_k={request.top_k})")
+        
+        # 动态加载集合并创建索引
+        try:
+            chroma_collection = chroma_client.get_collection(name=request.collection_name)
+            logger.info(f"成功加载集合: {request.collection_name}")
+        except Exception as e:
+            logger.error(f"加载集合 '{request.collection_name}' 失败: {e}")
+            raise HTTPException(status_code=404, detail=f"知识库集合 '{request.collection_name}' 不存在或加载失败")
+
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        index = VectorStoreIndex.from_vector_store(vector_store)
         
         # 直接从 index 创建一个配置好 top_k 的 retriever
         retriever = index.as_retriever(similarity_top_k=request.top_k)
@@ -206,25 +214,22 @@ async def retrieve_knowledge(request: RetrieveRequest):
 @app.get("/collections")
 async def list_collections():
     """列出所有可用的集合"""
-    try:
-        chroma_client = chromadb.PersistentClient(path=CHROMADB_PATH)
-        collections = chroma_client.list_collections()
+    global chroma_client
+    if chroma_client is None:
+        raise HTTPException(status_code=503, detail="知识库未初始化 (Chroma Client is None)")
         
-        return {
-            "collections": [
-                {
-                    "name": col.name,
-                    "count": col.count(),
-                    "metadata": col.metadata
-                }
-                for col in collections
-            ]
-        }
+    try:
+        collections = chroma_client.list_collections()
+        # 将返回的 Collection 对象转换为字典列表
+        return [{"name": c.name, "id": str(c.id), "metadata": c.metadata} for c in collections]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取集合列表失败: {str(e)}")
+        logger.error(f"列出集合失败: {e}")
+        raise HTTPException(status_code=500, detail=f"列出集合失败: {str(e)}")
 
 if __name__ == "__main__":
+    # 引入 uvicorn 和必要的库
     import uvicorn
+    import logging
     
     logger.info("启动知识库检索 API 服务...")
     uvicorn.run(

@@ -67,6 +67,7 @@
       :settings="settingsData"
       @save-settings="handleSaveSettings"
       @load-models="loadOllamaModels"
+      @load-knowledge-bases="loadKnowledgeBases" 
     />
   </div>
 </template>
@@ -120,11 +121,14 @@ const {
   maxTokens,
   useKnowledgeBase,
   knowledgeBaseUrl,
+  knowledgeBaseCollection, // 新增
+  availableKnowledgeBases, // 新增
   maxContextLength,
   searchTopK,
   loadSettings,
   saveSettings,
-  loadOllamaModels
+  loadOllamaModels,
+  loadKnowledgeBases // 新增
 } = settingsComposable
 
 // 设置数据对象
@@ -139,6 +143,8 @@ const settingsData = computed(() => ({
   maxTokens,
   useKnowledgeBase,
   knowledgeBaseUrl,
+  knowledgeBaseCollection, // 新增
+  availableKnowledgeBases, // 新增
   maxContextLength,
   searchTopK
 }))
@@ -157,6 +163,10 @@ onMounted(async () => {
   // 如果使用本地模型，尝试加载模型列表
   if (useLocalModel.value) {
     await loadOllamaModels()
+  }
+  // 如果启用知识库，则加载知识库列表
+  if (useKnowledgeBase.value) {
+    await loadKnowledgeBases()
   }
 })
 
@@ -189,6 +199,7 @@ function handleSaveSettings(newSettings) {
   maxTokens.value = newSettings.maxTokens
   useKnowledgeBase.value = newSettings.useKnowledgeBase
   knowledgeBaseUrl.value = newSettings.knowledgeBaseUrl
+  knowledgeBaseCollection.value = newSettings.knowledgeBaseCollection // 新增
   maxContextLength.value = newSettings.maxContextLength
   searchTopK.value = newSettings.searchTopK
 
